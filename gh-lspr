@@ -171,6 +171,29 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
+{{- printf "\n🔖 Assigned pull requests\n" | autocolor "magenta+b" -}}
+
+{{- range $pr := .data.assignedPR.nodes -}}
+  {{- $is_approved := false -}}
+  {{- range $review := $pr.reviews.nodes -}}
+    {{- if and (eq $review.state "APPROVED") (eq $review.author.login "'$GITHUB_USER'") -}}
+      {{- $is_approved = true -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if $is_approved -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ✅") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- else -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ❌") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- end -}}
+{{- end -}}
+
+{{ if eq (len .data.assignedPR.nodes) 0 }}
+{{- printf "No assigned pull requests\n" -}}
+{{ else }}
+{{- tablerender -}}
+{{ end }}
+
 {{- printf "\n📝 Reviewed pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.reviewedPR.nodes -}}
