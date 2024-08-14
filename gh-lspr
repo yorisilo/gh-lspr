@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# 自分の GitHub ユーザー名を設定
+GITHUB_USER=$(gh api user -q .login)
+
 limit=10
 
 filtered_prs_query=''
@@ -11,6 +14,7 @@ created_prs_query='is:open is:pr author:@me'
 
 mentioned_prs_query='is:open is:pr mentions:@me'
 
+# reviewed_prs_query を承認済みフラグとして利用
 reviewed_prs_query='is:open is:pr reviewed-by:@me'
 
 assigned_prs_query='is:open is:pr assignee:@me'
@@ -33,14 +37,6 @@ FLAGS
   -o, --org                 Filter by organization name or user name
   -l, --limit               Maximum number of items to fetch (default 10)
   -h, --help                Show help
-
-EXAMPLES
-  $ gh lspr
-  $ gh lspr -l 20
-  $ gh lspr -r
-  $ gh lspr -c
-  $ gh lspr -m -l 15
-  $ gh lspr -a
 EOF
 }
 
@@ -57,6 +53,14 @@ show_filtered_pr_list() {
           repository {
             name
           }
+          reviews(first: 10) {
+            nodes {
+              state
+              author {
+                login
+              }
+            }
+          }
         }
       }
     }
@@ -65,7 +69,21 @@ show_filtered_pr_list() {
 
   local template='
 {{- range $pr := .data.search.nodes -}}
-  {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
+  {{- $is_approved := false -}}
+  {{- range $review := $pr.reviews.nodes -}}
+    {{- if and (eq $review.state "APPROVED") (eq $review.author.login "'$GITHUB_USER'") -}}
+      {{- $is_approved = true -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if $is_approved -}}
+    {{- printf "#%v %s ✅" .number (truncate 40 .title) | autocolor "green" }}
+  {{- else -}}
+    {{- printf "#%v %s ❌" .number (truncate 40 .title) | autocolor "green" }}
+  {{- end -}}
+
+  {{- printf " %s" (.url | autocolor "cyan") -}}
+  {{- printf " %s" (.updatedAt | timeago | autocolor "white") -}}
 {{- end -}}
 
 {{ if eq (len .data.search.nodes) 0 }}
@@ -88,6 +106,14 @@ show_multiple_pr_lists() {
       updatedAt
       repository {
         name
+      }
+      reviews(first: 10) {
+        nodes {
+          state
+          author {
+            login
+          }
+        }
       }
     }
   }
@@ -122,10 +148,21 @@ show_multiple_pr_lists() {
   '
 
   local template='
-{{- printf "👀 Review requested pull requests\n" | autocolor "magenta+b" -}}
+{{- printf "👀 Review requested pull requests\n\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.requestedPR.nodes -}}
-  {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
+  {{- $is_approved := false -}}
+  {{- range $review := $pr.reviews.nodes -}}
+    {{- if and (eq $review.state "APPROVED") (eq $review.author.login "'$GITHUB_USER'") -}}
+      {{- $is_approved = true -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if $is_approved -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ✅") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- else -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ❌") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- end -}}
 {{- end -}}
 
 {{ if eq (len .data.requestedPR.nodes) 0 }}
@@ -134,22 +171,21 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
-{{- printf "\n🔖 Assigned pull requests\n" | autocolor "magenta+b" -}}
-
-{{- range $pr := .data.assignedPR.nodes -}}
-  {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
-{{- end -}}
-
-{{ if eq (len .data.assignedPR.nodes) 0 }}
-{{- printf "No assigned pull requests\n" -}}
-{{ else }}
-{{- tablerender -}}
-{{ end }}
-
-{{- printf "\n📝 Reviewed pull requests\n" | autocolor "magenta+b" -}}
+{{- printf "\n📝 Reviewed pull requests\n\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.reviewedPR.nodes -}}
-  {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
+  {{- $is_approved := false -}}
+  {{- range $review := $pr.reviews.nodes -}}
+    {{- if and (eq $review.state "APPROVED") (eq $review.author.login "'$GITHUB_USER'") -}}
+      {{- $is_approved = true -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if $is_approved -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ✅") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- else -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ❌") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- end -}}
 {{- end -}}
 
 {{ if eq (len .data.reviewedPR.nodes) 0 }}
@@ -158,10 +194,21 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
-{{- printf "\n✋ Mentioned pull requests\n" | autocolor "magenta+b" -}}
+{{- printf "\n✋ Mentioned pull requests\n\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.mentionedPR.nodes -}}
-  {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
+  {{- $is_approved := false -}}
+  {{- range $review := $pr.reviews.nodes -}}
+    {{- if and (eq $review.state "APPROVED") (eq $review.author.login "'$GITHUB_USER'") -}}
+      {{- $is_approved = true -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if $is_approved -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ✅") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- else -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ❌") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- end -}}
 {{- end -}}
 
 {{ if eq (len .data.mentionedPR.nodes) 0 }}
@@ -170,10 +217,21 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
-{{- printf "\n📂 Created pull requests\n" | autocolor "magenta+b" -}}
+{{- printf "\n📂 Created pull requests\n\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.createdPR.nodes -}}
-  {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
+  {{- $is_approved := false -}}
+  {{- range $review := $pr.reviews.nodes -}}
+    {{- if and (eq $review.state "APPROVED") (eq $review.author.login "'$GITHUB_USER'") -}}
+      {{- $is_approved = true -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if $is_approved -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ✅") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- else -}}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ❌") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
+  {{- end -}}
 {{- end -}}
 
 {{ if eq (len .data.createdPR.nodes) 0 }}
