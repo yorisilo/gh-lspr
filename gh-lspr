@@ -148,7 +148,7 @@ show_multiple_pr_lists() {
   '
 
   local template='
-{{- printf "👀 Review requested pull requests\n\n" | autocolor "magenta+b" -}}
+{{- printf "👀 Review requested pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.requestedPR.nodes -}}
   {{- $is_approved := false -}}
@@ -171,7 +171,7 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
-{{- printf "\n📝 Reviewed pull requests\n\n" | autocolor "magenta+b" -}}
+{{- printf "\n📝 Reviewed pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.reviewedPR.nodes -}}
   {{- $is_approved := false -}}
@@ -194,7 +194,7 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
-{{- printf "\n✋ Mentioned pull requests\n\n" | autocolor "magenta+b" -}}
+{{- printf "\n✋ Mentioned pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.mentionedPR.nodes -}}
   {{- $is_approved := false -}}
@@ -217,7 +217,7 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
-{{- printf "\n📂 Created pull requests\n\n" | autocolor "magenta+b" -}}
+{{- printf "\n📂 Created pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.createdPR.nodes -}}
   {{- $is_approved := false -}}
