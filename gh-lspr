@@ -13,6 +13,8 @@ mentioned_prs_query='is:open is:pr mentions:@me'
 
 reviewed_prs_query='is:open is:pr reviewed-by:@me'
 
+assigned_prs_query='is:open is:pr assignee:@me'
+
 org=''
 
 show_help() {
@@ -25,8 +27,9 @@ USAGE
 FLAGS
   -rr, --review-requested   Filter by review requested to others
   -r, --reviewed            Filter by reviewed by me
-  -c, --created             Filter by created by myself 
+  -c, --created             Filter by created by myself
   -m, --mentioned           Filter by mentioned to me
+  -a, --assigned            Filter by assigned to me
   -o, --org                 Filter by organization name or user name
   -l, --limit               Maximum number of items to fetch (default 10)
   -h, --help                Show help
@@ -37,6 +40,7 @@ EXAMPLES
   $ gh lspr -r
   $ gh lspr -c
   $ gh lspr -m -l 15
+  $ gh lspr -a
 EOF
 }
 
@@ -88,7 +92,7 @@ show_multiple_pr_lists() {
     }
   }
 
-  query ($createdPRQuery: String!, $requestedPRQuery: String!, $mentionedPRQuery: String!, $reviewedPRQuery: String!, $limit: Int = 10) {
+  query ($createdPRQuery: String!, $requestedPRQuery: String!, $mentionedPRQuery: String!, $reviewedPRQuery: String!, $assignedPRQuery: String!, $limit: Int = 10) {
     createdPR: search(first: $limit, type: ISSUE, query: $createdPRQuery) {
       nodes {
         ...pr
@@ -109,11 +113,16 @@ show_multiple_pr_lists() {
         ...pr
       }
     }
+    assignedPR: search(first: $limit, type: ISSUE, query: $assignedPRQuery) {
+      nodes {
+        ...pr
+      }
+    }
   }
   '
 
   local template='
-{{- printf "👀 Review requested pull requests\n\n" | autocolor "magenta+b" -}}
+{{- printf "👀 Review requested pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.requestedPR.nodes -}}
   {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
@@ -125,7 +134,19 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
-{{- printf "\n📝 Reviewed pull requests\n\n" | autocolor "magenta+b" -}}
+{{- printf "\n🔖 Assigned pull requests\n" | autocolor "magenta+b" -}}
+
+{{- range $pr := .data.assignedPR.nodes -}}
+  {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
+{{- end -}}
+
+{{ if eq (len .data.assignedPR.nodes) 0 }}
+{{- printf "No assigned pull requests\n" -}}
+{{ else }}
+{{- tablerender -}}
+{{ end }}
+
+{{- printf "\n📝 Reviewed pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.reviewedPR.nodes -}}
   {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
@@ -137,7 +158,7 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
-{{- printf "\n✋ Mentioned pull requests\n\n" | autocolor "magenta+b" -}}
+{{- printf "\n✋ Mentioned pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.mentionedPR.nodes -}}
   {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
@@ -149,7 +170,7 @@ show_multiple_pr_lists() {
 {{- tablerender -}}
 {{ end }}
 
-{{- printf "\n📂 Created pull requests\n\n" | autocolor "magenta+b" -}}
+{{- printf "\n📂 Created pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.createdPR.nodes -}}
   {{- tablerow (printf "#%v" .number | autocolor "green") (truncate 40 .title) (.url | autocolor "cyan") (.updatedAt | timeago | autocolor "white")  -}}
@@ -166,6 +187,7 @@ show_multiple_pr_lists() {
     -F requestedPRQuery="$2" \
     -F mentionedPRQuery="$3" \
     -F reviewedPRQuery="$4" \
+    -F assignedPRQuery="$5" \
     -F limit="$limit" \
     -f query="$query" \
     --template="$template"
@@ -185,7 +207,7 @@ handle_filter_flag() {
 
 handle_org_flag() {
   if [ -n "$org" ] ; then
-    show_multiple_pr_lists "$created_prs_query org:$org" "$requested_prs_query org:$org" "$mentioned_prs_query org:$org" "$reviewed_prs_query org:$org"
+    show_multiple_pr_lists "$created_prs_query org:$org" "$requested_prs_query org:$org" "$mentioned_prs_query org:$org" "$reviewed_prs_query org:$org" "$assigned_prs_query org:$org"
     exit 0
   fi
 }
@@ -204,6 +226,9 @@ while [ $# -gt 0 ]; do
   -r)
     filtered_prs_query="$reviewed_prs_query"
     ;;
+  -a|--assigned)
+    filtered_prs_query="$assigned_prs_query"
+    ;;
   -h|--help)
     show_help
     exit 0
@@ -221,4 +246,4 @@ done
 handle_filter_flag
 handle_org_flag
 
-show_multiple_pr_lists "$created_prs_query" "$requested_prs_query" "$mentioned_prs_query" "$reviewed_prs_query"
+show_multiple_pr_lists "$created_prs_query" "$requested_prs_query" "$mentioned_prs_query" "$reviewed_prs_query" "$assigned_prs_query"
