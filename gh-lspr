@@ -4,20 +4,20 @@ set -e
 # 自分の GitHub ユーザー名を設定
 GITHUB_USER=$(gh api user -q .login)
 
+# 環境変数から除外するリポジトリを取得（カンマ区切り）
+# e.g. export IGNORE_REPOSITORIES="owner/repo1,owner/repo2"
+IFS=',' read -r -a ignore_repository <<< "${IGNORE_REPOSITORIES:-}"
+# ignore_repository リストを文字列に変換
+ignore_repository_query=$(printf -- "-repo:%s " "${ignore_repository[@]}")
+
 limit=10
 
 filtered_prs_query=''
-
-requested_prs_query='is:open is:pr review-requested:@me'
-
-created_prs_query='is:open is:pr author:@me'
-
-mentioned_prs_query='is:open is:pr mentions:@me'
-
-# reviewed_prs_query を承認済みフラグとして利用
-reviewed_prs_query='is:open is:pr reviewed-by:@me'
-
-assigned_prs_query='is:open is:pr assignee:@me'
+requested_prs_query="is:open is:pr review-requested:@me $ignore_repository_query"
+created_prs_query="is:open is:pr author:@me $ignore_repository_query"
+mentioned_prs_query="is:open is:pr mentions:@me $ignore_repository_query"
+reviewed_prs_query="is:open is:pr reviewed-by:@me $ignore_repository_query" # reviewed_prs_query を承認済みフラグとして利用
+assigned_prs_query="is:open is:pr assignee:@me $ignore_repository_query"
 
 org=''
 
@@ -77,13 +77,10 @@ show_filtered_pr_list() {
   {{- end -}}
 
   {{- if $is_approved -}}
-    {{- printf "#%v %s ✅" .number (truncate 40 .title) | autocolor "green" }}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ✅") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
   {{- else -}}
-    {{- printf "#%v %s ❌" .number (truncate 40 .title) | autocolor "green" }}
+    {{- tablerow (printf "#%v" $pr.number | autocolor "green") (truncate 40 $pr.title | printf "%s ❌") ($pr.url | autocolor "cyan") ($pr.updatedAt | timeago | autocolor "white") -}}
   {{- end -}}
-
-  {{- printf " %s" (.url | autocolor "cyan") -}}
-  {{- printf " %s" (.updatedAt | timeago | autocolor "white") -}}
 {{- end -}}
 
 {{ if eq (len .data.search.nodes) 0 }}
@@ -148,6 +145,7 @@ show_multiple_pr_lists() {
   '
 
   local template='
+{{- printf "All YOUR GIT STUFF\n" | autocolor "green+b" -}}
 {{- printf "👀 Review requested pull requests\n" | autocolor "magenta+b" -}}
 
 {{- range $pr := .data.requestedPR.nodes -}}
