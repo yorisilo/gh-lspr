@@ -12,12 +12,18 @@ ignore_repository_query=$(printf -- "-repo:%s " "${ignore_repository[@]}")
 
 limit=10
 
+# for pull request
 filtered_prs_query=''
 requested_prs_query="is:open is:pr review-requested:@me $ignore_repository_query"
 created_prs_query="is:open is:pr author:@me $ignore_repository_query"
 mentioned_prs_query="is:open is:pr mentions:@me $ignore_repository_query"
 reviewed_prs_query="is:open is:pr reviewed-by:@me $ignore_repository_query" # reviewed_prs_query を承認済みフラグとして利用
 assigned_prs_query="is:open is:pr assignee:@me $ignore_repository_query"
+
+# for issue
+created_issues_query="is:open is:issue author:@me $ignore_repository_query"
+mentioned_issues_query="is:open is:issue mentions:@me $ignore_repository_query"
+assigned_issues_query="is:open is:issue assignee:@me $ignore_repository_query"
 
 org=''
 
@@ -34,6 +40,7 @@ FLAGS
   -c, --created             Filter by created by myself
   -m, --mentioned           Filter by mentioned to me
   -a, --assigned            Filter by assigned to me
+  -i, --issue               Use issue mode instead of pull request mode
   -o, --org                 Filter by organization name or user name
   -l, --limit               Maximum number of items to fetch (default 10)
   -h, --help                Show help

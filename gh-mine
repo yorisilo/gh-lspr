@@ -1,0 +1,339 @@
+#!/bin/bash
+set -e
+
+# 自分の GitHub ユーザー名を設定
+GITHUB_USER=$(gh api user -q .login)
+
+# 環境変数から除外するリポジトリを取得（カンマ区切り）
+# e.g. export IGNORE_REPOSITORIES="owner/repo1,owner/repo2"
+IFS=',' read -r -a ignore_repository <<< "${IGNORE_REPOSITORIES:-}"
+# ignore_repository リストを文字列に変換
+ignore_repository_query=$(printf -- "-repo:%s " "${ignore_repository[@]}")
+
+limit=100
+
+# for pull request related me
+filtered_prs_query=''
+requested_prs_query="is:open is:pr review-requested:@me sort:updated-desc $ignore_repository_query"
+created_prs_query="is:open is:pr author:@me sort:updated-desc $ignore_repository_query"
+mentioned_prs_query="is:open is:pr mentions:@me sort:updated-desc $ignore_repository_query"
+reviewed_prs_query="is:open is:pr reviewed-by:@me sort:updated-desc $ignore_repository_query" # reviewed_prs_query を承認済みフラグとして利用
+assigned_prs_query="is:open is:pr assignee:@me sort:updated-desc $ignore_repository_query"
+
+# for issue related me
+created_issues_query="is:open is:issue author:@me sort:updated-desc $ignore_repository_query"
+mentioned_issues_query="is:open is:issue mentions:@me sort:updated-desc $ignore_repository_query"
+assigned_issues_query="is:open is:issue assignee:@me sort:updated-desc $ignore_repository_query"
+
+# for pullrequest related team
+# ...
+
+# for issue related team
+# ...
+
+org=''
+
+fetch_issue_pr_list() {
+  local query='
+    fragment pr on PullRequest {
+      number
+      title
+      url
+      updatedAt
+      createdAt
+      author {
+        login
+      }
+      repository {
+        name
+      }
+      reviews(first: 10 states: [APPROVED]) {
+        nodes {
+          state
+          author {
+            login
+          }
+        }
+      }
+    }
+
+    fragment issue on Issue {
+      number
+      title
+      url
+      createdAt
+      updatedAt
+      repository {
+        name
+      }
+      author {
+        login
+      }
+      labels(first: 10) {
+        nodes {
+          name
+        }
+      }
+    }
+
+    query(
+      \$createdPRQuery: String!,
+      \$requestedPRQuery: String!,
+      \$mentionedPRQuery: String!,
+      \$reviewedPRQuery: String!,
+      \$assignedPRQuery: String!,
+      \$createdIssueQuery: String!,
+      \$mentionedIssueQuery: String!,
+      \$assignedIssueQuery: String!,
+      \$limit: Int = 10
+    ) {
+      createdPR: search(first: \$limit, type: ISSUE, query: \$createdPRQuery) {
+        nodes { ...pr }
+      }
+      requestedPR: search(first: \$limit, type: ISSUE, query: \$requestedPRQuery) {
+        nodes { ...pr }
+      }
+      mentionedPR: search(first: \$limit, type: ISSUE, query: \$mentionedPRQuery) {
+        nodes { ...pr }
+      }
+      reviewedPR: search(first: \$limit, type: ISSUE, query: \$reviewedPRQuery) {
+        nodes { ...pr }
+      }
+      assignedPR: search(first: \$limit, type: ISSUE, query: \$assignedPRQuery) {
+        nodes { ...pr }
+      }
+      createdIssue: search(first: \$limit, type: ISSUE, query: \$createdIssueQuery) {
+        nodes { ...issue }
+      }
+      mentionedIssue: search(first: \$limit, type: ISSUE, query: \$mentionedIssueQuery) {
+        nodes { ...issue }
+      }
+      assignedIssue: search(first: \$limit, type: ISSUE, query: \$assignedIssueQuery) {
+        nodes { ...issue }
+      }
+    }
+  '
+
+  local result
+  result=$(gum spin --spinner "dot" --title "fetching..." -- sh -c "gh api graphql \
+    -F createdPRQuery=\"$1\" \
+    -F requestedPRQuery=\"$2\" \
+    -F mentionedPRQuery=\"$3\" \
+    -F reviewedPRQuery=\"$4\" \
+    -F assignedPRQuery=\"$5\" \
+    -F createdIssueQuery=\"$6\" \
+    -F mentionedIssueQuery=\"$7\" \
+    -F assignedIssueQuery=\"$8\" \
+    -F limit=\"$limit\" \
+    -f query=\"$query\"")
+  echo "$result"
+}
+
+issue_pr_list=$(fetch_issue_pr_list "$created_prs_query" "$requested_prs_query" "$mentioned_prs_query" "$reviewed_prs_query" "$assigned_prs_query" "$created_issues_query" "$mentioned_issues_query" "$assigned_issues_query")
+
+# debug
+# echo $issue_pr_list
+
+# 各グループの結果をTSV形式で取得（各フィールド内の余分な空白は gsub() により除去）
+pr_requested=$(echo "$issue_pr_list" | jq -r '
+  .data.requestedPR.nodes[]? |
+  [
+    (.title[0:30] | gsub("\\s"; "")),
+    (.url | gsub("\\s"; "")),
+    (.author.login | gsub("\\s"; "")),
+    (.updatedAt | gsub("\\s"; ""))
+  ] | @tsv
+')
+
+pr_assigned=$(echo "$issue_pr_list" | jq -r '
+  .data.assignedPR.nodes[]? |
+  [
+    (.title[0:30] | gsub("\\s"; "")),
+    (.url | gsub("\\s"; "")),
+    (.author.login | gsub("\\s"; "")),
+    (.updatedAt | gsub("\\s"; ""))
+  ] | @tsv
+')
+
+pr_reviewed=$(echo "$issue_pr_list" | jq -r '
+  .data.reviewedPR.nodes[]? |
+  [
+    (.title[0:30] | gsub("\\s"; "")),
+    (.url | gsub("\\s"; "")),
+    (.author.login | gsub("\\s"; "")),
+    (.updatedAt | gsub("\\s"; ""))
+  ] | @tsv
+')
+
+pr_created=$(echo "$issue_pr_list" | jq -r '
+  .data.createdPR.nodes[]? |
+  [
+    (.title[0:30] | gsub("\\s"; "")),
+    (.url | gsub("\\s"; "")),
+    (.author.login | gsub("\\s"; "")),
+    (.updatedAt | gsub("\\s"; ""))
+  ] | @tsv
+')
+
+pr_mentioned=$(echo "$issue_pr_list" | jq -r '
+  .data.mentionedPR.nodes[]? |
+  [
+    (.title[0:30] | gsub("\\s"; "")),
+    (.url | gsub("\\s"; "")),
+    (.author.login | gsub("\\s"; "")),
+    (.updatedAt | gsub("\\s"; ""))
+  ] | @tsv
+')
+
+issue_created=$(echo "$issue_pr_list" | jq -r '
+  .data.createdIssue.nodes[]? |
+  [
+    (.title[0:30] | gsub("\\s"; "")),
+    (.url | gsub("\\s"; "")),
+    (.author.login | gsub("\\s"; "")),
+    (.updatedAt | gsub("\\s"; ""))
+  ] | @tsv
+')
+
+issue_mentioned=$(echo "$issue_pr_list" | jq -r '
+  .data.mentionedIssue.nodes[]? |
+  [
+    (.title[0:30] | gsub("\\s"; "")),
+    (.url | gsub("\\s"; "")),
+    (.author.login | gsub("\\s"; "")),
+    (.updatedAt | gsub("\\s"; ""))
+  ] | @tsv
+')
+
+issue_assigned=$(echo "$issue_pr_list" | jq -r '
+  .data.assignedIssue.nodes[]? |
+  [
+    (.title[0:30] | gsub("\\s"; "")),
+    (.url | gsub("\\s"; "")),
+    (.author.login | gsub("\\s"; "")),
+    (.updatedAt | gsub("\\s"; ""))
+  ] | @tsv
+')
+
+
+# TSV 形式になっているので、まずすべての行をまとめる
+# table=$( {
+#   echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME";  # ヘッダー行
+#   # echo "$pr_requested"
+#   echo "$pr_assigned"
+#   # echo "$pr_reviewed"
+#   # echo "$pr_created"
+#   # echo "$pr_mentioned"
+#   # echo "$issue_created"
+#   # echo "$issue_mentioned"
+#   echo "$issue_assigned"
+# } )
+
+table=""
+
+case "$1" in
+  other|--other)
+    # 「other」モード
+    table=$( {
+      echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME"
+      echo "$pr_assigned"
+      echo "$issue_assigned"
+    } )
+    ;;
+  me|--me)
+    # 「me」モード
+    table=$( {
+      echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME"
+      echo "$pr_created"
+      echo "$issue_created"
+    } )
+    ;;
+  *)
+    # デフォルト（コマンドライン引数なしの場合など）は全部または適当な組み合わせ
+    table=$( {
+      echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME";
+      # echo "$pr_requested"
+      echo "$pr_assigned"
+      echo "$issue_assigned"
+      # echo "$pr_reviewed"
+      # echo "$pr_mentioned"
+      echo "$pr_created"
+      echo "$issue_created"
+      # echo "$issue_mentioned"
+
+    } )
+    ;;
+esac
+
+
+timeago() {
+  # 引数が空なら何も返さない
+  if [ -z "$1" ]; then
+    echo ""
+    return
+  fi
+
+  # 例: "2023-10-07T06:37:16.123Z" または "2023-10-07T06:37:16Z"
+  local iso_date="$1"
+
+  # 末尾の "Z" を削除
+  iso_date="${iso_date%Z}"
+  # 小数点以下の部分があれば除去 (例: "2023-10-07T06:37:16.123" → "2023-10-07T06:37:16")
+  iso_date="${iso_date%%.*}"
+
+  # 空文字になっていないかチェック
+  if [ -z "$iso_date" ]; then
+    echo ""
+    return
+  fi
+
+  # BSD date では -d オプションは使えないので、-j -f を利用してパースする
+  local ts
+  ts=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$iso_date" +"%s" 2>/dev/null)
+  if [ -z "$ts" ]; then
+    # パースに失敗した場合は空文字を返す
+    echo ""
+    return
+  fi
+
+  local now
+  now=$(date +"%s")
+  local diff=$(( now - ts ))
+
+  if [ $diff -lt 60 ]; then
+    echo "${diff}s ago"
+  elif [ $diff -lt 3600 ]; then
+    echo "$(( diff / 60 ))m ago"
+  elif [ $diff -lt 86400 ]; then
+    echo "$(( diff / 3600 ))h ago"
+  else
+    echo "$(( diff / 86400 ))d ago"
+  fi
+}
+
+trim() {
+  sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+# 次に、ヘッダー以外の各行の UPDATE-TIME 列を timeago 関数で変換する
+final_table=$(echo "$table" | tail -n +2 | while IFS=$'\t' read -r title url author updated; do
+  new_update=$(timeago "$updated")
+  echo -e "${title}\t${url}\t${author}\t${new_update}"
+done)
+
+# ヘッダー行を付与して全体のテーブルを作成
+header_table=$( {
+  echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME"
+  echo "$final_table"
+} )
+
+# 列をタブ区切りを空白を使って綺麗に整形する
+formatted_table=$(echo "$header_table" | column -t -s $'\t')
+selected_row=$(echo "$formatted_table" | fzf --header-lines=1 --header="PR and ISSUE list:" --reverse --cycle --height ${FZF_TMUX_HEIGHT:-60%})
+selected_url=$(echo "$selected_row" | awk -F ' ' '{print $2}' | trim)
+
+if [ -n "$selected_url" ]; then
+  echo "Selected URL: $selected_url"
+  # MacOSの場合は open、Linuxの場合は xdg-open などを利用
+  open "$selected_url"
+fi
