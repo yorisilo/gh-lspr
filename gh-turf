@@ -78,36 +78,36 @@ fetch_issue_pr_list() {
 
     query(
       \$createdPRQuery: String!,
-      \$requestedPRQuery: String!,
-      \$mentionedPRQuery: String!,
-      \$reviewedPRQuery: String!,
+      # \$requestedPRQuery: String!,
+      # \$mentionedPRQuery: String!,
+      # \$reviewedPRQuery: String!,
       \$assignedPRQuery: String!,
       \$createdIssueQuery: String!,
-      \$mentionedIssueQuery: String!,
+      # \$mentionedIssueQuery: String!,
       \$assignedIssueQuery: String!,
       \$limit: Int = 10
     ) {
       createdPR: search(first: \$limit, type: ISSUE, query: \$createdPRQuery) {
         nodes { ...pr }
       }
-      requestedPR: search(first: \$limit, type: ISSUE, query: \$requestedPRQuery) {
-        nodes { ...pr }
-      }
-      mentionedPR: search(first: \$limit, type: ISSUE, query: \$mentionedPRQuery) {
-        nodes { ...pr }
-      }
-      reviewedPR: search(first: \$limit, type: ISSUE, query: \$reviewedPRQuery) {
-        nodes { ...pr }
-      }
+      # requestedPR: search(first: \$limit, type: ISSUE, query: \$requestedPRQuery) {
+      #   nodes { ...pr }
+      # }
+      # mentionedPR: search(first: \$limit, type: ISSUE, query: \$mentionedPRQuery) {
+      #   nodes { ...pr }
+      # }
+      # reviewedPR: search(first: \$limit, type: ISSUE, query: \$reviewedPRQuery) {
+      #   nodes { ...pr }
+      # }
       assignedPR: search(first: \$limit, type: ISSUE, query: \$assignedPRQuery) {
         nodes { ...pr }
       }
       createdIssue: search(first: \$limit, type: ISSUE, query: \$createdIssueQuery) {
         nodes { ...issue }
       }
-      mentionedIssue: search(first: \$limit, type: ISSUE, query: \$mentionedIssueQuery) {
-        nodes { ...issue }
-      }
+      # mentionedIssue: search(first: \$limit, type: ISSUE, query: \$mentionedIssueQuery) {
+      #   nodes { ...issue }
+      # }
       assignedIssue: search(first: \$limit, type: ISSUE, query: \$assignedIssueQuery) {
         nodes { ...issue }
       }
@@ -215,20 +215,6 @@ issue_assigned=$(echo "$issue_pr_list" | jq -r '
   ] | @tsv
 ')
 
-
-# TSV 形式になっているので、まずすべての行をまとめる
-# table=$( {
-#   echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME";  # ヘッダー行
-#   # echo "$pr_requested"
-#   echo "$pr_assigned"
-#   # echo "$pr_reviewed"
-#   # echo "$pr_created"
-#   # echo "$pr_mentioned"
-#   # echo "$issue_created"
-#   # echo "$issue_mentioned"
-#   echo "$issue_assigned"
-# } )
-
 table=""
 
 case "$1" in
@@ -330,7 +316,7 @@ header_table=$( {
 
 # 列をタブ区切りを空白を使って綺麗に整形する
 formatted_table=$(echo "$header_table" | column -t -s $'\t')
-selected_row=$(echo "$formatted_table" | fzf --header-lines=1 --header="PR and ISSUE list:" --reverse --cycle --height ${FZF_TMUX_HEIGHT:-60%})
+selected_row=$(echo "$formatted_table" | fzf --header-lines=1 --header="PR and ISSUE list:" --reverse --cycle --height ${FZF_TMUX_HEIGHT:-60%} --no-sort --exact)
 selected_url=$(echo "$selected_row" | awk -F ' ' '{print $2}' | trim)
 
 if [ -n "$selected_url" ]; then
