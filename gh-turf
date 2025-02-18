@@ -132,7 +132,7 @@ fetch_issue_pr_list() {
 issue_pr_list=$(fetch_issue_pr_list "$created_prs_query" "$requested_prs_query" "$mentioned_prs_query" "$reviewed_prs_query" "$assigned_prs_query" "$created_issues_query" "$mentioned_issues_query" "$assigned_issues_query")
 
 # debug
-# echo $issue_pr_list
+# echo $issue_pr_list | jq .
 
 # 各グループの結果をTSV形式で取得（各フィールド内の余分な空白は gsub() により除去）
 pr_requested=$(echo "$issue_pr_list" | jq -r '
@@ -288,8 +288,9 @@ timeago() {
   fi
 
   # BSD date では -d オプションは使えないので、-j -f を利用してパースする
+  # ISO 文字列は元々 UTC なので、TZ=UTC を指定してパースする
   local ts
-  ts=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$iso_date" +"%s" 2>/dev/null)
+  ts=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "$iso_date" +"%s" 2>/dev/null)
   if [ -z "$ts" ]; then
     # パースに失敗した場合は空文字を返す
     echo ""
