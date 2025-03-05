@@ -205,13 +205,17 @@ pr_reviewed=$(echo "$issue_pr_list" | jq -r --arg user "$GITHUB_USER" '
   ] | @tsv
 ')
 
-pr_created=$(echo "$issue_pr_list" | jq -r '
+pr_created=$(echo "$issue_pr_list" | jq -r --arg user "$GITHUB_USER" '
   .data.createdPR.nodes[]? |
   [
     (.title[0:30] | gsub("\\s"; "")),
     (.url | gsub("\\s"; "")),
     (.author.login | gsub("\\s"; "")),
-    (.updatedAt | gsub("\\s"; ""))
+    (.updatedAt | gsub("\\s"; "")),
+    (
+      (.reviews.nodes | map(select(.state == "APPROVED" and (.author.login != $user))) | length) as $n
+      | if $n > 0 then "\($n) OTHER APPROVED" else "NOT OTHER APPROVED" end
+    )
   ] | @tsv
 ')
 
@@ -237,7 +241,11 @@ issue_created=$(echo "$issue_pr_list" | jq -r '
     (.title[0:30] | gsub("\\s"; "")),
     (.url | gsub("\\s"; "")),
     (.author.login | gsub("\\s"; "")),
-    (.updatedAt | gsub("\\s"; ""))
+    (.updatedAt | gsub("\\s"; "")),
+    (
+      (.labels.nodes | map(select(.name | test("^approve_"))) | length) as $n
+      | if $n > 0 then "\($n) OTHER APPROVED" else "NOT OTHER APPROVED" end
+    )
   ] | @tsv
 ')
 
@@ -287,7 +295,7 @@ case "$1" in
   me|--me)
     # 「me」モード
     table=$( {
-      echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME"
+      echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME\tSTATUS"
       echo "$pr_created"
       echo "$issue_created"
     } )
