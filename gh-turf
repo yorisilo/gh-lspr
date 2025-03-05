@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+CACHE_FILE="$HOME/.gh_turf_cache.json"
+# sec
+CACHE_EXPIRE=300
+
 # 自分の GitHub ユーザー名を設定
 GITHUB_USER=$(gh api user -q .login)
 
@@ -129,39 +133,75 @@ fetch_issue_pr_list() {
   echo "$result"
 }
 
-issue_pr_list=$(fetch_issue_pr_list "$created_prs_query" "$requested_prs_query" "$mentioned_prs_query" "$reviewed_prs_query" "$assigned_prs_query" "$created_issues_query" "$mentioned_issues_query" "$assigned_issues_query")
+# キャッシュが存在して有効期限内ならキャッシュを利用
+issue_pr_list=''
+if [ -f "$CACHE_FILE" ]; then
+  last_modified=$(stat -f "%m" "$CACHE_FILE")  # macOSの場合。Linuxなら stat -c %Y "$CACHE_FILE"
+  now=$(date +%s)
+  if [ $(( now - last_modified )) -lt $CACHE_EXPIRE ]; then
+    issue_pr_list=$(cat "$CACHE_FILE")
+  else
+    # キャッシュが古い場合は、新たにfetchしてキャッシュ更新
+    issue_pr_list=$(fetch_issue_pr_list "$created_prs_query" "$requested_prs_query" "$mentioned_prs_query" "$reviewed_prs_query" "$assigned_prs_query" "$created_issues_query" "$mentioned_issues_query" "$assigned_issues_query")
+    echo "$issue_pr_list" > "$CACHE_FILE"
+  fi
+else
+  # キャッシュが無い場合は、fetchしてキャッシュ保存
+  issue_pr_list=$(fetch_issue_pr_list "$created_prs_query" "$requested_prs_query" "$mentioned_prs_query" "$reviewed_prs_query" "$assigned_prs_query" "$created_issues_query" "$mentioned_issues_query" "$assigned_issues_query")
+  echo "$issue_pr_list" > "$CACHE_FILE"
+fi
+
+# issue_pr_list=$(fetch_issue_pr_list "$created_prs_query" "$requested_prs_query" "$mentioned_prs_query" "$reviewed_prs_query" "$assigned_prs_query" "$created_issues_query" "$mentioned_issues_query" "$assigned_issues_query")
 
 # debug
 # echo $issue_pr_list | jq .
 
 # 各グループの結果をTSV形式で取得（各フィールド内の余分な空白は gsub() により除去）
-pr_requested=$(echo "$issue_pr_list" | jq -r '
+pr_requested=$(echo "$issue_pr_list" | jq -r --arg user "$GITHUB_USER" '
   .data.requestedPR.nodes[]? |
   [
     (.title[0:30] | gsub("\\s"; "")),
     (.url | gsub("\\s"; "")),
     (.author.login | gsub("\\s"; "")),
-    (.updatedAt | gsub("\\s"; ""))
+    (.updatedAt | gsub("\\s"; "")),
+    (
+      if (.reviews.nodes | map(select(.author.login == $user and .state == "APPROVED")) | length) > 0
+      then "APPROVED"
+      else "NOT APPROVED"
+      end
+    )
   ] | @tsv
 ')
 
-pr_assigned=$(echo "$issue_pr_list" | jq -r '
+pr_assigned=$(echo "$issue_pr_list" | jq -r --arg user "$GITHUB_USER" '
   .data.assignedPR.nodes[]? |
   [
     (.title[0:30] | gsub("\\s"; "")),
     (.url | gsub("\\s"; "")),
     (.author.login | gsub("\\s"; "")),
-    (.updatedAt | gsub("\\s"; ""))
+    (.updatedAt | gsub("\\s"; "")),
+    (
+      if (.reviews.nodes | map(select(.author.login == $user and .state == "APPROVED")) | length) > 0
+      then "APPROVED"
+      else "NOT APPROVED"
+      end
+    )
   ] | @tsv
 ')
 
-pr_reviewed=$(echo "$issue_pr_list" | jq -r '
+pr_reviewed=$(echo "$issue_pr_list" | jq -r --arg user "$GITHUB_USER" '
   .data.reviewedPR.nodes[]? |
   [
     (.title[0:30] | gsub("\\s"; "")),
     (.url | gsub("\\s"; "")),
     (.author.login | gsub("\\s"; "")),
-    (.updatedAt | gsub("\\s"; ""))
+    (.updatedAt | gsub("\\s"; "")),
+    (
+      if (.reviews.nodes | map(select(.author.login == $user and .state == "APPROVED")) | length) > 0
+      then "APPROVED"
+      else "NOT APPROVED"
+      end
+    )
   ] | @tsv
 ')
 
@@ -175,13 +215,19 @@ pr_created=$(echo "$issue_pr_list" | jq -r '
   ] | @tsv
 ')
 
-pr_mentioned=$(echo "$issue_pr_list" | jq -r '
+pr_mentioned=$(echo "$issue_pr_list" | jq -r --arg user "$GITHUB_USER" '
   .data.mentionedPR.nodes[]? |
   [
     (.title[0:30] | gsub("\\s"; "")),
     (.url | gsub("\\s"; "")),
     (.author.login | gsub("\\s"; "")),
-    (.updatedAt | gsub("\\s"; ""))
+    (.updatedAt | gsub("\\s"; "")),
+    (
+      if (.reviews.nodes | map(select(.author.login == $user and .state == "APPROVED")) | length) > 0
+      then "APPROVED"
+      else "NOT APPROVED"
+      end
+    )
   ] | @tsv
 ')
 
@@ -195,23 +241,35 @@ issue_created=$(echo "$issue_pr_list" | jq -r '
   ] | @tsv
 ')
 
-issue_mentioned=$(echo "$issue_pr_list" | jq -r '
+issue_mentioned=$(echo "$issue_pr_list" | jq -r --arg user "$GITHUB_USER" '
   .data.mentionedIssue.nodes[]? |
   [
     (.title[0:30] | gsub("\\s"; "")),
     (.url | gsub("\\s"; "")),
     (.author.login | gsub("\\s"; "")),
-    (.updatedAt | gsub("\\s"; ""))
+    (.updatedAt | gsub("\\s"; "")),
+    (
+      if (.labels.nodes | map(select(.name == ("approve_" + $user))) | length) > 0
+      then "APPROVED"
+      else "NOT APPROVED"
+      end
+    )
   ] | @tsv
 ')
 
-issue_assigned=$(echo "$issue_pr_list" | jq -r '
+issue_assigned=$(echo "$issue_pr_list" | jq -r --arg user "$GITHUB_USER" '
   .data.assignedIssue.nodes[]? |
   [
     (.title[0:30] | gsub("\\s"; "")),
     (.url | gsub("\\s"; "")),
     (.author.login | gsub("\\s"; "")),
-    (.updatedAt | gsub("\\s"; ""))
+    (.updatedAt | gsub("\\s"; "")),
+    (
+      if (.labels.nodes | map(select(.name == ("approve_" + $user))) | length) > 0
+      then "APPROVED"
+      else "NOT APPROVED"
+      end
+    )
   ] | @tsv
 ')
 
@@ -221,7 +279,7 @@ case "$1" in
   other|--other)
     # 「other」モード
     table=$( {
-      echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME"
+      echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME\tSTATUS"
       echo "$pr_assigned"
       echo "$issue_assigned"
     } )
@@ -237,7 +295,7 @@ case "$1" in
   *)
     # デフォルト（コマンドライン引数なしの場合など）は全部または適当な組み合わせ
     table=$( {
-      echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME";
+      echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME\tSTATUS"
       # echo "$pr_requested"
       echo "$pr_assigned"
       echo "$issue_assigned"
@@ -303,14 +361,14 @@ trim() {
 }
 
 # 次に、ヘッダー以外の各行の UPDATE-TIME 列を timeago 関数で変換する
-final_table=$(echo "$table" | tail -n +2 | while IFS=$'\t' read -r title url author updated; do
+final_table=$(echo "$table" | tail -n +2 | while IFS=$'\t' read -r title url author updated status; do
   new_update=$(timeago "$updated")
-  echo -e "${title}\t${url}\t${author}\t${new_update}"
+  echo -e "${title}\t${url}\t${author}\t${new_update}\t${status}"
 done)
 
 # ヘッダー行を付与して全体のテーブルを作成
 header_table=$( {
-  echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME"
+  echo -e "TITLE\tURL\tAUTHOR\tUPDATE-TIME\tSTATUS"
   echo "$final_table"
 } )
 
